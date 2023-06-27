@@ -10,12 +10,13 @@ class MahalanobisData:
     """
     """
     Vt: ndarray = None  # Truncated right singular matrix transposed of the corpus
+    mu: ndarray = None  # Mean of the corpus
     S: ndarray = None  # Truncated singular values of the corpus
-    subspace_thres: float = 1e-12  # Threshold to decide whether a point is in the data subspace
+    subspace_thres: float = 1e-3  # Threshold to decide whether a point is in the data subspace
     svd_thres: float = 1e-12  # Threshold to decide numerical rank of the data matrix
     numerical_rank: int = None  # Numerical rank
     corpus: ndarray = None  # Corpus used to compute the Data
-    corpus_distances: ndarray = None # Distances of data in the corpus
+    corpus_distances: ndarray = None  # Distances of data in the corpus
 
 
 class RNearestNeighbour:
@@ -59,9 +60,10 @@ class RNearestNeighbour:
         if self.distance == "Euclidean":
             return (self.estimator.kneighbors(np.reshape(x, (1, -1))))[0] >= self.thres_distance
         elif self.distance == "Mahalanobis":
-            # 1. decide if x is in the subspace
-            rho = np.linalg.norm(x - x @ self.mahalanobis_data.Vt.T @ self.mahalanobis_data.Vt) \
-                  / np.linalg.norm(x)
+            # 1. decide if x is in the subspace, mu + row_span(X - mu)
+            y = x - self.mahalanobis_data.mu
+            rho = np.linalg.norm(y - y @ self.mahalanobis_data.Vt.T @ self.mahalanobis_data.Vt) \
+                  / np.linalg.norm(y)
             if rho > self.mahalanobis_data.subspace_thres:
                 return True
             # 2. compute the minimal distance of x to all data point in the corpus using Mahalanobis distance
@@ -89,12 +91,13 @@ class RNearestNeighbour:
         self.mahalanobis_data.Vt = Vt[:k]
         self.mahalanobis_data.corpus = corpus
         self.mahalanobis_data.S = S[:k]
+        self.mahalanobis_data.mu = mean_X
 
         # Compute the distribution of Mahalanobis distances of the data in the corpus
         n = len(corpus)
         dists = [[np.inf] * n for i in range(0, n)]
         for i in range(0, n):
-            for j in range(i+1, n):
+            for j in range(i + 1, n):
                 dists[i][j] = self._mahalanobis_distance(corpus[i], corpus[j])
         for i in range(0, n):
             for j in range(0, i):
@@ -105,7 +108,8 @@ class RNearestNeighbour:
 
     def _mahalanobis_distance(self, x: ndarray, y: ndarray) -> float:
         """
-        Compute Mahalanobis distance between two points x, y
+        Compute Mahalanobis distance between two points x, y,
+        Assume x-y-mahalanobis_data.mu in the column subspace of mahalanobis_data.Vt.T
         :param x: ndarray, dimension 1*n
         :param y: ndarray, dimension 1*n
         :return: The mahalanobis distance
