@@ -1,7 +1,12 @@
+import numpy as np
+from sklearn.metrics import roc_auc_score
+
+
 class Eval:
     """
     Evaluate an anomaly detection method given corpus and test set
     """
+
     def __init__(self, detector=None, corpus=None, inlier=None, outlier=None):
         """
 
@@ -26,12 +31,23 @@ class Eval:
         TN = len(self.inlier) - sum(inlier_predictions)
         FP = len(self.inlier) - TN
         FN = len(self.outlier) - TP
-        accuracy = (TP + TN)/(TP + TN + FP + FN)
-        precision = TP/(TP + FP)
-        recall = TP/(TP + FN)
-        FPR = FP/(FP + TN)
-        TPR = TP/(TP + FN)
+        accuracy = (TP + TN) / (TP + TN + FP + FN)
+        precision = TP / (TP + FP)
+        recall = TP / (TP + FN)
+        FPR = FP / (FP + TN)
+        TPR = TP / (TP + FN)
         return accuracy, precision, recall, FPR, TPR
+
+    def auc(self):
+        """
+        compute AUC for the test set, independent of the prediction threshold
+        :return: auc score
+        """
+        return roc_auc_score([False] * len(self.inlier) + [True] * len(self.outlier),
+                             np.concatenate([self.detector.compute_distances(self.inlier),
+                                             self.detector.compute_distances(self.outlier)]
+                                            )
+                             )
 
     def print_eval(self):
         accuracy, precision, recall, FPR, TPR = self.eval()
@@ -40,4 +56,3 @@ class Eval:
               "recall", recall,
               "FPR", FPR,
               "TPR", TPR)
-

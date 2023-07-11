@@ -57,32 +57,40 @@ class RNearestNeighbour:
         else:
             raise NotImplementedError
 
-    def predict(self, x) -> ndarray:
+    def compute_distances(self, x) -> ndarray:
         """
-        :param x: data point
-        :return: True if x is classified as an outlier, False if inlier
+        Compute the distances to the corpus
+        :param x:
+        :return:
         """
         x = x - self.corpus_mean
         if self.distance == "Euclidean":
             if len(x.shape) == 1:
-                return (self.estimator.kneighbors(np.reshape(x, (1, -1))))[0] >= self.thres_distance
+                return self.estimator.kneighbors(np.reshape(x, (1, -1)))[0]
             else:
-                return (self.estimator.kneighbors(x)[0] >= self.thres_distance)[:, 0]
+                return self.estimator.kneighbors(x)[0]
         elif self.distance == "Mahalanobis":
             rho = np.linalg.norm(x - x @ self.mahalanobis_data.Vt.T @ self.mahalanobis_data.Vt, axis=1) \
                   / np.linalg.norm(x, axis=1)
             x = x @ self.mahalanobis_data.Vt.T @ np.diag(self.mahalanobis_data.S ** (-1))
             if len(x.shape) == 1:
                 if rho > self.mahalanobis_data.subspace_thres:
-                    return np.array([True])
+                    return np.array([np.inf])
                 else:
-                    return np.array(self.estimator.kneighbors(np.reshape(x, (1, -1)))[0] >= self.thres_distance)
+                    return self.estimator.kneighbors(np.reshape(x, (1, -1)))[0]
             else:
                 return np.where(rho > self.mahalanobis_data.subspace_thres,
-                                True,
-                                (self.estimator.kneighbors(x)[0] >= self.thres_distance)[:, 0])
+                                np.inf,
+                                (self.estimator.kneighbors(x)[0])[:, 0])
         else:
             raise NotImplementedError
+
+    def predict(self, x) -> ndarray:
+        """
+        :param x: data point
+        :return: True if x is classified as an outlier, False if inlier
+        """
+        return self.compute_distances(x) >= self.thres_distance
 
     def _mahalanobis(self, corpus) -> None:
         """
