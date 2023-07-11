@@ -1,5 +1,6 @@
 import unittest
 
+import numpy
 import numpy as np
 
 from RNearestNeighbour import RNearestNeighbour
@@ -15,13 +16,13 @@ class MyTestCase(unittest.TestCase):
         y1 = np.array([0.3333,    1.0000,    2.1667,    3.1667,    7.8333])
         dist = model._mahalanobis_distance(y1, y0)
         self.assertAlmostEqual(dist, 0.1667, 3)
-        self.assertFalse(model.predict(y1)) # Not an outlier, corpus distance is 2,2,2
+        self.assertFalse(model.predict(np.array([y1]))[0]) # Not an outlier, corpus distance is 2,2,2
 
         y2 = np.array([0.7398  , -0.4918 ,  -0.2999 ,  -0.2999  , -0.1759]) # orthogonal to the subspace
         dist1 = model._mahalanobis_distance(y2 + y1, y0)
         self.assertAlmostEqual(dist1, 0.1667, 3)
         # But it is an outlier, so the above number does not mean anything as it's not in the corpus subspace
-        self.assertTrue(model.predict(y2+y1))
+        self.assertTrue(model.predict(np.array([y2 + y1]))[0])
 
     def test_invariance(self):
         """

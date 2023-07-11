@@ -19,8 +19,9 @@ class Eval:
         """
         :return: (accuracy, precision, recall, false positive rate, false negative rate)
         """
-        inlier_predictions = [self.detector.predict(inlier) for inlier in self.inlier]
-        outlier_predictions = [self.detector.predict(outlier) for outlier in self.outlier]
+        inlier_predictions = self.detector.predict(self.inlier)
+        outlier_predictions = self.detector.predict(self.outlier)
+
         TP = sum(outlier_predictions)
         TN = len(self.inlier) - sum(inlier_predictions)
         FP = len(self.inlier) - TN

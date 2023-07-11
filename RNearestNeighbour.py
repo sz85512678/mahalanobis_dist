@@ -16,13 +16,12 @@ class MahalanobisData:
     svd_thres: float = 1e-12  # Threshold to decide numerical rank of the data matrix
     numerical_rank: int = None  # Numerical rank
     corpus: ndarray = None  # Corpus used to compute the Data
-    corpus_distances: ndarray = None  # Distances of data in the corpus
+    transformed_data = None  # Transformed data so that Euclidean distances will be used
 
 
 class RNearestNeighbour:
     """
     Nearest neighbours (possibly randomised)
-
     """
 
     def __init__(self, thres_quantile, distance="Euclidean"):
@@ -33,48 +32,55 @@ class RNearestNeighbour:
         self.distance = distance
         self.estimator = None
         self.thres_quantile = thres_quantile
-        self.thres_distance = None
+        self.thres_distance: float = np.inf
         self.mahalanobis_data = MahalanobisData()
+        self.corpus_mean = None
 
     def fit(self, corpus) -> None:
         """
-
         :param corpus: numpy array of numpy array, corpus[i] is the feature of the ith data point
         :return:
         """
+        self.corpus_mean = np.mean(corpus, axis=0)
+        corpus = corpus - self.corpus_mean
         if self.distance == "Euclidean":
             self.estimator = NearestNeighbors(n_neighbors=1)
             self.estimator.fit(corpus)
             dist, ind = self.estimator.kneighbors()
             self.thres_distance = np.quantile(dist, self.thres_quantile)
         elif self.distance == "Mahalanobis":
+            self.estimator = NearestNeighbors(n_neighbors=1)
             self._mahalanobis(corpus)
+            self.estimator.fit(self.mahalanobis_data.transformed_data)
+            dist, ind = self.estimator.kneighbors()
+            self.thres_distance = np.quantile(dist, self.thres_quantile)
         else:
             raise NotImplementedError
 
-    def predict(self, x) -> bool:
+    def predict(self, x) -> ndarray:
         """
         :param x: data point
         :return: True if x is classified as an outlier, False if inlier
         """
+        x = x - self.corpus_mean
         if self.distance == "Euclidean":
-            return (self.estimator.kneighbors(np.reshape(x, (1, -1))))[0] >= self.thres_distance
-        elif self.distance == "Mahalanobis":
-            # 1. decide if x is in the subspace, mu + row_span(X - mu)
-            y = x - self.mahalanobis_data.mu
-            rho = np.linalg.norm(y - y @ self.mahalanobis_data.Vt.T @ self.mahalanobis_data.Vt) \
-                  / np.linalg.norm(y)
-            if rho > self.mahalanobis_data.subspace_thres:
-                return True
-            # 2. compute the minimal distance of x to all data point in the corpus using Mahalanobis distance
-            n = len(self.mahalanobis_data.corpus)
-            dists = [np.inf] * n
-            for i in range(0, n):
-                dists[i] = self._mahalanobis_distance(x, self.mahalanobis_data.corpus[i])
-            if min(dists) > self.thres_distance:
-                return True
+            if len(x.shape) == 1:
+                return (self.estimator.kneighbors(np.reshape(x, (1, -1))))[0] >= self.thres_distance
             else:
-                return False
+                return (self.estimator.kneighbors(x)[0] >= self.thres_distance)[:, 0]
+        elif self.distance == "Mahalanobis":
+            rho = np.linalg.norm(x - x @ self.mahalanobis_data.Vt.T @ self.mahalanobis_data.Vt, axis=1) \
+                  / np.linalg.norm(x, axis=1)
+            x = x @ self.mahalanobis_data.Vt.T @ np.diag(self.mahalanobis_data.S ** (-1))
+            if len(x.shape) == 1:
+                if rho > self.mahalanobis_data.subspace_thres:
+                    return np.array([True])
+                else:
+                    return np.array(self.estimator.kneighbors(np.reshape(x, (1, -1)))[0] >= self.thres_distance)
+            else:
+                return np.where(rho > self.mahalanobis_data.subspace_thres,
+                                True,
+                                (self.estimator.kneighbors(x)[0] >= self.thres_distance)[:, 0])
         else:
             raise NotImplementedError
 
@@ -84,27 +90,18 @@ class RNearestNeighbour:
         :return:
         """
         X = corpus
-        mean_X = np.mean(X, axis=0)
-        U, S, Vt = np.linalg.svd(X - mean_X)
+        U, S, Vt = np.linalg.svd(X)
         k = np.sum(S >= self.mahalanobis_data.svd_thres)  # detected numerical rank
         self.mahalanobis_data.numerical_rank = k
         self.mahalanobis_data.Vt = Vt[:k]
         self.mahalanobis_data.corpus = corpus
         self.mahalanobis_data.S = S[:k]
-        self.mahalanobis_data.mu = mean_X
-
-        # Compute the distribution of Mahalanobis distances of the data in the corpus
-        n = len(corpus)
-        dists = [[np.inf] * n for i in range(0, n)]
-        for i in range(0, n):
-            for j in range(i + 1, n):
-                dists[i][j] = self._mahalanobis_distance(corpus[i], corpus[j])
-        for i in range(0, n):
-            for j in range(0, i):
-                dists[i][j] = dists[j][i]
-        distances = np.min(dists, axis=1)
-        self.mahalanobis_data.corpus_distances = distances
-        self.thres_distance = np.quantile(distances, self.thres_quantile)
+        self.mahalanobis_data.mu = self.corpus_mean
+        self.mahalanobis_data.transformed_data = (
+                X @
+                self.mahalanobis_data.Vt.T @
+                np.diag(self.mahalanobis_data.S ** (-1))
+        )
 
     def _mahalanobis_distance(self, x: ndarray, y: ndarray) -> float:
         """
